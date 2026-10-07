@@ -4,8 +4,8 @@ import pool from "./config/database";
 import dotenv from "dotenv";
 import paymentRoutes from "./routes/payment.routes";
 import webhookRoutes from "./routes/webhook.routes";
-
-
+import trialRoutes from "./routes/trial.routes";
+import subscriptionRoutes from "./routes/subscription.routes";
 
 dotenv.config();
 
@@ -23,7 +23,8 @@ app.use(
 // Register all payment-related API routes
 app.use("/api/payments", paymentRoutes);
 app.use("/api/webhooks", webhookRoutes);
-
+app.use( "/api/trials",trialRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 app.get("/", (req, res) => {
   res.json({
