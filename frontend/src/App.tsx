@@ -8,6 +8,7 @@ import PricingPage from "./pages/PricingPage";
 import PaymentCallbackPage from "./pages/PaymentCallbackPage";
 import TrialCallbackPage from "./pages/TrialCallbackPage";
 import VideoAddOnPage from "./pages/VideoAddOnPage";
+import SubscriptionPage from "./pages/SubscriptionPage";
 import "./App.css";
 
 function App() {
@@ -18,6 +19,25 @@ function App() {
 
   return (
     <BrowserRouter>
+
+<nav className="payment-nav">
+  <a href="/">Plans</a>
+
+  <a href="/subscription">
+    My Subscription
+  </a>
+
+  <a href="/video-addon">
+    AI Video
+  </a>
+</nav>
+
+
+
+
+
+
+
       <Routes>
         <Route
           path="/"
@@ -52,6 +72,16 @@ function App() {
     />
   }
 />
+
+<Route
+  path="/subscription"
+  element={
+    <SubscriptionPage
+      userId={userId}
+    />
+  }
+/>
+
 
       </Routes>
     </BrowserRouter>

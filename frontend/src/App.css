@@ -24,27 +24,37 @@
 
 .pricing-page {
   min-height: 100vh;
+
   padding: 80px 24px;
+
   box-sizing: border-box;
 }
 
 .pricing-header {
   max-width: 700px;
+
   margin: 0 auto 50px;
+
   text-align: center;
 }
 
 .pricing-header h1 {
   margin: 0 0 16px;
+
   color: var(--text);
+
   font-size: 48px;
+
   line-height: 1.1;
 }
 
 .pricing-header p {
   margin: 0;
+
   color: var(--muted);
+
   font-size: 18px;
+
   line-height: 1.6;
 }
 
@@ -54,11 +64,15 @@
 
 .pricing-grid {
   width: 100%;
+
   max-width: 1000px;
+
   margin: 0 auto;
 
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
 
   gap: 30px;
 }
@@ -71,11 +85,13 @@
   position: relative;
 
   display: flex;
+
   flex-direction: column;
 
   padding: 35px;
 
   border: 1px solid var(--border);
+
   border-radius: 18px;
 
   background: var(--card-bg);
@@ -97,6 +113,7 @@
   position: absolute;
 
   top: -14px;
+
   left: 50%;
 
   transform: translateX(-50%);
@@ -106,9 +123,11 @@
   border-radius: 999px;
 
   background: var(--accent);
+
   color: #ffffff;
 
   font-size: 13px;
+
   font-weight: 700;
 
   white-space: nowrap;
@@ -124,12 +143,15 @@
   color: var(--text);
 
   font-size: 28px;
+
   line-height: 1.2;
 }
 
 .pricing-price {
   display: flex;
+
   align-items: baseline;
+
   gap: 6px;
 
   margin-bottom: 16px;
@@ -139,11 +161,13 @@
   color: var(--text);
 
   font-size: 42px;
+
   font-weight: 700;
 }
 
 .pricing-price small {
   color: var(--muted);
+
   font-size: 15px;
 }
 
@@ -163,6 +187,7 @@
 
 .pricing-card ul {
   margin: 0 0 30px;
+
   padding: 0;
 
   list-style: none;
@@ -194,12 +219,15 @@
   padding: 14px 20px;
 
   border: none;
+
   border-radius: 10px;
 
   background: var(--accent);
+
   color: #ffffff;
 
   font-size: 16px;
+
   font-weight: 700;
 
   cursor: pointer;
@@ -212,6 +240,7 @@
 
 .payment-button:hover:not(:disabled) {
   background: var(--accent-hover);
+
   transform: translateY(-2px);
 }
 
@@ -221,6 +250,7 @@
 
 .payment-button:disabled {
   cursor: not-allowed;
+
   opacity: 0.6;
 }
 
@@ -234,7 +264,9 @@
   color: var(--danger);
 
   font-size: 14px;
+
   line-height: 1.4;
+
   text-align: center;
 }
 
@@ -246,7 +278,9 @@
   min-height: 100vh;
 
   display: flex;
+
   align-items: center;
+
   justify-content: center;
 
   padding: 40px 20px;
@@ -254,11 +288,13 @@
 
 .payment-result-card {
   width: 100%;
+
   max-width: 520px;
 
   padding: 40px;
 
   border: 1px solid var(--border);
+
   border-radius: 20px;
 
   background: var(--card-bg);
@@ -286,10 +322,13 @@
 
 .payment-result-icon {
   width: 60px;
+
   height: 60px;
 
   display: flex;
+
   align-items: center;
+
   justify-content: center;
 
   margin: 0 auto;
@@ -297,19 +336,23 @@
   border-radius: 50%;
 
   background: var(--accent);
+
   color: #ffffff;
 
   font-size: 30px;
+
   font-weight: 700;
 }
 
 .payment-spinner {
   width: 45px;
+
   height: 45px;
 
   margin: 0 auto;
 
   border: 4px solid var(--border);
+
   border-top-color: var(--accent);
 
   border-radius: 50%;
@@ -331,7 +374,9 @@
   min-height: 100vh;
 
   display: flex;
+
   align-items: center;
+
   justify-content: center;
 
   padding: 80px 24px;
@@ -345,11 +390,13 @@
 
 .video-addon-card {
   width: 100%;
+
   max-width: 600px;
 
   padding: 45px;
 
   border: 1px solid var(--border);
+
   border-radius: 20px;
 
   background: var(--card-bg);
@@ -375,6 +422,7 @@
   color: var(--accent);
 
   font-size: 13px;
+
   font-weight: 800;
 
   letter-spacing: 1.5px;
@@ -390,6 +438,7 @@
   color: var(--text);
 
   font-size: 38px;
+
   line-height: 1.15;
 }
 
@@ -405,6 +454,7 @@
   color: var(--muted);
 
   font-size: 17px;
+
   line-height: 1.6;
 }
 
@@ -414,7 +464,9 @@
 
 .video-addon-price {
   display: flex;
+
   align-items: baseline;
+
   justify-content: center;
 
   gap: 8px;
@@ -426,6 +478,7 @@
   color: var(--text);
 
   font-size: 46px;
+
   font-weight: 700;
 }
 
@@ -441,9 +494,11 @@
 
 .video-addon-features {
   width: 100%;
+
   max-width: 360px;
 
   margin: 0 auto 30px;
+
   padding: 0;
 
   list-style: none;
@@ -465,6 +520,7 @@
 
 .video-addon-card .payment-button-wrapper {
   width: 100%;
+
   max-width: 100%;
 
   margin: 0 auto;
@@ -523,5 +579,389 @@
 
   .video-addon-price span {
     font-size: 38px;
+  }
+}
+
+/* =========================================================
+   SUBSCRIPTION
+   ========================================================= */
+
+.subscription-page {
+  min-height: 100vh;
+
+  padding: 130px 24px 80px;
+
+  background: var(--bg);
+}
+
+.subscription-header {
+  max-width: 700px;
+
+  margin: 0 auto 40px;
+
+  text-align: center;
+}
+
+.subscription-header h1 {
+  margin: 10px 0 14px;
+
+  color: var(--text);
+
+  font-size: 42px;
+
+  line-height: 1.15;
+}
+
+.subscription-header p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 17px;
+
+  line-height: 1.6;
+}
+
+.subscription-label {
+  color: var(--accent);
+
+  font-size: 12px;
+
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+}
+
+.subscription-card {
+  width: 100%;
+
+  max-width: 600px;
+
+  margin: 0 auto;
+
+  padding: 35px;
+
+  border: 1px solid var(--border);
+
+  border-radius: 20px;
+
+  background: var(--card-bg);
+
+  box-shadow: var(--shadow);
+}
+
+.subscription-card-header {
+  display: flex;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin-bottom: 25px;
+}
+
+.subscription-card-header h2 {
+  margin: 8px 0 0;
+
+  color: var(--text);
+
+  font-size: 30px;
+}
+
+.subscription-status {
+  padding: 7px 12px;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+.subscription-status-trialing {
+  background: rgba(139, 92, 246, 0.15);
+
+  color: #c4b5fd;
+}
+
+.subscription-status-active {
+  background: rgba(34, 197, 94, 0.15);
+
+  color: #86efac;
+}
+
+.subscription-status-non-renewing {
+  background: rgba(245, 158, 11, 0.15);
+
+  color: #fcd34d;
+}
+
+.subscription-status-cancelled,
+.subscription-status-completed {
+  background: rgba(239, 68, 68, 0.15);
+
+  color: #fca5a5;
+}
+
+.subscription-status-pending {
+  background: rgba(148, 163, 184, 0.15);
+
+  color: var(--muted);
+}
+
+.subscription-price {
+  display: flex;
+
+  align-items: baseline;
+
+  gap: 6px;
+
+  margin-bottom: 25px;
+}
+
+.subscription-price span {
+  color: var(--text);
+
+  font-size: 42px;
+
+  font-weight: 700;
+}
+
+.subscription-price small {
+  color: var(--muted);
+
+  font-size: 15px;
+}
+
+.subscription-info {
+  display: flex;
+
+  justify-content: space-between;
+
+  padding: 16px 0;
+
+  border-top: 1px solid var(--border);
+
+  color: var(--muted);
+}
+
+.subscription-info strong {
+  color: var(--text);
+}
+
+.subscription-notice {
+  margin: 20px 0;
+
+  padding: 14px;
+
+  border-radius: 10px;
+
+  background: rgba(245, 158, 11, 0.1);
+
+  color: #fcd34d;
+
+  line-height: 1.5;
+}
+
+.subscription-action {
+  width: 100%;
+
+  margin-top: 25px;
+
+  padding: 14px 20px;
+
+  border: none;
+
+  border-radius: 10px;
+
+  background: var(--accent);
+
+  color: #ffffff;
+
+  font-size: 16px;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s,
+    transform 0.2s,
+    opacity 0.2s;
+}
+
+.subscription-action:hover:not(:disabled) {
+  background: var(--accent-hover);
+
+  transform: translateY(-2px);
+}
+
+.subscription-action:disabled {
+  cursor: not-allowed;
+
+  opacity: 0.6;
+}
+
+.subscription-action-danger {
+  background: transparent;
+
+  border: 1px solid var(--danger);
+
+  color: #fca5a5;
+}
+
+.subscription-action-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.subscription-loading {
+  max-width: 500px;
+
+  margin: 100px auto;
+
+  text-align: center;
+}
+
+.subscription-loading h1 {
+  margin: 20px 0 10px;
+
+  color: var(--text);
+}
+
+.subscription-loading p {
+  color: var(--muted);
+}
+
+.subscription-empty {
+  max-width: 600px;
+
+  margin: 0 auto;
+
+  padding: 40px;
+
+  border: 1px solid var(--border);
+
+  border-radius: 20px;
+
+  background: var(--card-bg);
+
+  text-align: center;
+}
+
+.subscription-empty h2 {
+  margin: 0 0 10px;
+
+  color: var(--text);
+}
+
+.subscription-empty p {
+  margin: 0;
+
+  color: var(--muted);
+}
+
+.subscription-error {
+  max-width: 600px;
+
+  margin: 0 auto 20px;
+
+  padding: 14px;
+
+  border: 1px solid var(--danger);
+
+  border-radius: 10px;
+
+  background: rgba(239, 68, 68, 0.1);
+
+  color: #fca5a5;
+
+  text-align: center;
+}
+
+/* =========================================================
+   PAYMENT NAVIGATION
+   ========================================================= */
+
+.payment-nav {
+  position: fixed;
+
+  top: 0;
+
+  left: 0;
+
+  right: 0;
+
+  z-index: 1000;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 30px;
+
+  padding: 16px 24px;
+
+  border-bottom: 1px solid var(--border);
+
+  background: rgba(15, 23, 42, 0.95);
+
+  backdrop-filter: blur(10px);
+}
+
+.payment-nav a {
+  color: var(--muted);
+
+  font-size: 14px;
+
+  font-weight: 600;
+
+  text-decoration: none;
+
+  transition: color 0.2s;
+}
+
+.payment-nav a:hover {
+  color: var(--text);
+}
+
+/* =========================================================
+   MOBILE - SUBSCRIPTION
+   ========================================================= */
+
+@media (max-width: 600px) {
+  .payment-nav {
+    gap: 16px;
+
+    padding: 14px 12px;
+  }
+
+  .payment-nav a {
+    font-size: 12px;
+  }
+
+  .subscription-page {
+    padding: 110px 20px 50px;
+  }
+
+  .subscription-card {
+    padding: 25px 20px;
+  }
+
+  .subscription-card-header {
+    flex-direction: column;
+  }
+
+  .subscription-header h1 {
+    font-size: 34px;
+  }
+
+  .subscription-price span {
+    font-size: 36px;
   }
 }
