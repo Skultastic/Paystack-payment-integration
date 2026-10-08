@@ -11,39 +11,82 @@ export const createPaystackPlan = async (
   amount: number,
   interval: string
 ) => {
-  // Create recurring plan in Paystack
-  const response = await paystack.post("/plan", {
-    name,
-    amount,
-    interval,
-    currency: "ZAR",
-  });
+  // -------------------------------------------------------
+  // Validate interval
+  // -------------------------------------------------------
 
-  const paystackPlanCode =
-    response.data.data.plan_code;
+  const validIntervals = [
+    "daily",
+    "weekly",
+    "monthly",
+    "quarterly",
+    "biannually",
+    "annually",
+  ];
 
+  if (!validIntervals.includes(interval)) {
+    throw new Error(
+      `Invalid Paystack plan interval: ${interval}`
+    );
+  }
+
+  // -------------------------------------------------------
+  // Create plan in Paystack
+  // -------------------------------------------------------
+
+  const response = await paystack.post(
+    "/plan",
+    {
+      name,
+      amount,
+      interval,
+      currency: "ZAR",
+    }
+  );
+
+  const paystackPlan =
+    response.data.data;
+
+  if (!paystackPlan?.plan_code) {
+    throw new Error(
+      "Paystack did not return a plan code"
+    );
+  }
+
+  // -------------------------------------------------------
   // Save Paystack plan code locally
+  // -------------------------------------------------------
+
   await pool.query(
     `
     UPDATE subscription_plans
-    SET paystack_plan_code = $1
+    SET
+      paystack_plan_code = $1
     WHERE id = $2
     `,
     [
-      paystackPlanCode,
+      paystackPlan.plan_code,
       planId,
     ]
   );
 
-  return response.data.data;
+  return paystackPlan;
 };
 
 // =========================================================
 // SETUP PAYSTACK PLANS
 // =========================================================
+//
+// IMPORTANT:
+// This function does NOT run automatically when the server
+// starts.
+//
+// It is intended for initial Paystack plan configuration.
+// =========================================================
 
 export const setupPaystackPlans = async () => {
-  const plans = await pool.query(`
+  const result = await pool.query(
+    `
     SELECT
       id,
       name,
@@ -51,13 +94,25 @@ export const setupPaystackPlans = async () => {
       billing_interval,
       paystack_plan_code
     FROM subscription_plans
-    WHERE name IN ('Standard', 'Premium')
+    WHERE name IN (
+      'Standard',
+      'Premium'
+    )
+      AND active = true
     ORDER BY id
-  `);
+    `
+  );
 
-  for (const plan of plans.rows) {
-    // Don't create duplicate Paystack plans
-    if (plan.paystack_plan_code) {
+  for (
+    const plan of result.rows
+  ) {
+    // -----------------------------------------------------
+    // Do not create duplicate Paystack plans
+    // -----------------------------------------------------
+
+    if (
+      plan.paystack_plan_code
+    ) {
       continue;
     }
 
@@ -66,7 +121,9 @@ export const setupPaystackPlans = async () => {
         plan.id,
         plan.name,
         Math.round(
-          Number(plan.price_zar) * 100
+          Number(
+            plan.price_zar
+          ) * 100
         ),
         plan.billing_interval
       );
@@ -86,7 +143,10 @@ export const initializePayment = async (
   planId: number,
   userId: number
 ) => {
+  // -------------------------------------------------------
   // Get selected plan
+  // -------------------------------------------------------
+
   const result = await pool.query(
     `
     SELECT
@@ -103,42 +163,124 @@ export const initializePayment = async (
     [planId]
   );
 
-  if ((result.rowCount ?? 0) === 0) {
+  if (
+    (result.rowCount ?? 0) === 0
+  ) {
     throw new Error(
       "Payment plan not found"
     );
   }
 
-  const plan = result.rows[0];
+  const plan =
+    result.rows[0];
 
-  // Generate unique Paystack reference
+  // -------------------------------------------------------
+  // Make sure the user exists
+  // -------------------------------------------------------
+
+  const userResult =
+    await pool.query(
+      `
+      SELECT
+        id,
+        email
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+  if (
+    (userResult.rowCount ?? 0) === 0
+  ) {
+    throw new Error(
+      "User not found"
+    );
+  }
+
+  const user =
+    userResult.rows[0];
+
+  // -------------------------------------------------------
+  // Use database email rather than trusting a different
+  // email supplied by the frontend.
+  // -------------------------------------------------------
+
+  const paymentEmail =
+    user.email;
+
+  // -------------------------------------------------------
+  // Generate unique reference
+  // -------------------------------------------------------
+
   const reference =
     `PAY-${userId}-${Date.now()}`;
 
-  // Convert ZAR to cents
-  const amount =
-    Math.round(
-      Number(plan.price_zar) * 100
-    );
-
   // =======================================================
   // SUBSCRIPTION PAYMENT
+  // =======================================================
+  //
   // Standard / Premium
+  //
+  // Paystack's plan code causes the customer to become
+  // subscribed after the transaction succeeds.
   // =======================================================
 
-  if (plan.paystack_plan_code) {
-    const response = await paystack.post(
-      "/transaction/initialize",
-      {
-        email,
-        amount,
-        currency: "ZAR",
-        reference,
-        plan: plan.paystack_plan_code,
-      }
-    );
+  if (
+    plan.name === "Standard" ||
+    plan.name === "Premium"
+  ) {
+    if (
+      !plan.paystack_plan_code
+    ) {
+      throw new Error(
+        `${plan.name} Paystack plan is not configured`
+      );
+    }
 
-    // Save pending subscription payment
+    const amount =
+      Math.round(
+        Number(
+          plan.price_zar
+        ) * 100
+      );
+
+    const response =
+      await paystack.post(
+        "/transaction/initialize",
+        {
+          email: paymentEmail,
+
+          amount,
+
+          currency: "ZAR",
+
+          reference,
+
+          plan:
+            plan.paystack_plan_code,
+
+          channels: [
+            "card",
+          ],
+
+          callback_url:
+            process.env.PAYSTACK_PAYMENT_RETURN_URL,
+
+          metadata: {
+            user_id: userId,
+            plan_id: plan.id,
+            payment_type:
+              "subscription",
+          },
+        }
+      );
+
+    // -----------------------------------------------------
+    // Save pending payment
+    // -----------------------------------------------------
+
     await pool.query(
       `
       INSERT INTO payments (
@@ -170,36 +312,76 @@ export const initializePayment = async (
 
     return {
       reference,
+
       authorization_url:
-        response.data.data.authorization_url,
+        response.data.data
+          .authorization_url,
+
       access_code:
-        response.data.data.access_code,
-      payment_type: "subscription",
+        response.data.data
+          .access_code,
+
+      payment_type:
+        "subscription",
+
       plan: {
         id: plan.id,
         name: plan.name,
-        price_zar: plan.price_zar,
+        price_zar:
+          Number(
+            plan.price_zar
+          ),
       },
     };
   }
 
   // =======================================================
-  // ONE-TIME PAYMENT
-  // Video Add-on
+  // VIDEO ADD-ON
   // =======================================================
 
-  if (plan.name === "Video Add-on") {
-    const response = await paystack.post(
-      "/transaction/initialize",
-      {
-        email,
-        amount,
-        currency: "ZAR",
-        reference,
-      }
-    );
+  if (
+    plan.name ===
+    "Video Add-on"
+  ) {
+    const amount =
+      Math.round(
+        Number(
+          plan.price_zar
+        ) * 100
+      );
 
+    const response =
+      await paystack.post(
+        "/transaction/initialize",
+        {
+          email: paymentEmail,
+
+          amount,
+
+          currency: "ZAR",
+
+          reference,
+
+          channels: [
+            "card",
+          ],
+
+          callback_url:
+            process.env.PAYSTACK_PAYMENT_RETURN_URL,
+
+          metadata: {
+            user_id: userId,
+            plan_id: plan.id,
+            payment_type:
+              "video_addon",
+          },
+        }
+      );
+
+    // -----------------------------------------------------
     // Save pending video payment
+    // -----------------------------------------------------
+
     await pool.query(
       `
       INSERT INTO payments (
@@ -231,21 +413,31 @@ export const initializePayment = async (
 
     return {
       reference,
+
       authorization_url:
-        response.data.data.authorization_url,
+        response.data.data
+          .authorization_url,
+
       access_code:
-        response.data.data.access_code,
-      payment_type: "video_addon",
+        response.data.data
+          .access_code,
+
+      payment_type:
+        "video_addon",
+
       plan: {
         id: plan.id,
         name: plan.name,
-        price_zar: plan.price_zar,
+        price_zar:
+          Number(
+            plan.price_zar
+          ),
       },
     };
   }
 
   // =======================================================
-  // INVALID PAYMENT PLAN
+  // INVALID PLAN
   // =======================================================
 
   throw new Error(
@@ -260,32 +452,32 @@ export const initializePayment = async (
 export const verifyPayment = async (
   reference: string
 ) => {
-  // Ask Paystack for transaction status
-  const response = await paystack.get(
-    `/transaction/verify/${reference}`
-  );
+  // -------------------------------------------------------
+  // Find local payment first
+  // -------------------------------------------------------
 
-  const transaction =
-    response.data.data;
+  const paymentResult =
+    await pool.query(
+      `
+      SELECT
+        id,
+        user_id,
+        subscription_id,
+        paystack_reference,
+        amount_zar,
+        currency,
+        payment_type,
+        status
+      FROM payments
+      WHERE paystack_reference = $1
+      LIMIT 1
+      `,
+      [reference]
+    );
 
-  // Find local payment
-  const paymentResult = await pool.query(
-    `
-    SELECT
-      id,
-      user_id,
-      amount_zar,
-      currency,
-      payment_type,
-      status
-    FROM payments
-    WHERE paystack_reference = $1
-    LIMIT 1
-    `,
-    [reference]
-  );
-
-  if ((paymentResult.rowCount ?? 0) === 0) {
+  if (
+    (paymentResult.rowCount ?? 0) === 0
+  ) {
     throw new Error(
       "Payment record not found"
     );
@@ -294,11 +486,47 @@ export const verifyPayment = async (
   const payment =
     paymentResult.rows[0];
 
+  // -------------------------------------------------------
+  // Verify transaction with Paystack
+  // -------------------------------------------------------
+
+  const response =
+    await paystack.get(
+      `/transaction/verify/${encodeURIComponent(
+        reference
+      )}`
+    );
+
+  const transaction =
+    response.data.data;
+
+  if (!transaction) {
+    throw new Error(
+      "Paystack transaction data not found"
+    );
+  }
+
+  // =======================================================
+  // VERIFY REFERENCE
+  // =======================================================
+
+  if (
+    transaction.reference !==
+    payment.paystack_reference
+  ) {
+    throw new Error(
+      "Payment reference does not match"
+    );
+  }
+
   // =======================================================
   // VERIFY CURRENCY
   // =======================================================
 
-  if (transaction.currency !== payment.currency) {
+  if (
+    transaction.currency !==
+    payment.currency
+  ) {
     throw new Error(
       "Payment currency does not match"
     );
@@ -310,11 +538,15 @@ export const verifyPayment = async (
 
   const expectedAmount =
     Math.round(
-      Number(payment.amount_zar) * 100
+      Number(
+        payment.amount_zar
+      ) * 100
     );
 
   if (
-    transaction.amount !== expectedAmount
+    Number(
+      transaction.amount
+    ) !== expectedAmount
   ) {
     throw new Error(
       "Payment amount does not match"
@@ -322,16 +554,18 @@ export const verifyPayment = async (
   }
 
   // =======================================================
-  // PAYMENT FAILED
+  // PAYMENT NOT SUCCESSFUL
   // =======================================================
 
   if (
-    transaction.status !== "success"
+    transaction.status !==
+    "success"
   ) {
     await pool.query(
       `
       UPDATE payments
-      SET status = $1
+      SET
+        status = $1
       WHERE id = $2
       `,
       [
@@ -342,7 +576,10 @@ export const verifyPayment = async (
 
     return {
       success: false,
-      status: transaction.status,
+
+      status:
+        transaction.status,
+
       reference,
     };
   }
@@ -356,21 +593,32 @@ export const verifyPayment = async (
     UPDATE payments
     SET
       status = 'successful',
-      paid_at = $1
+      paid_at = COALESCE(
+        $1,
+        CURRENT_TIMESTAMP
+      )
     WHERE id = $2
     `,
     [
-      transaction.paid_at,
+      transaction.paid_at ??
+        null,
       payment.id,
     ]
   );
 
   return {
     success: true,
+
     status: "successful",
+
     reference,
-    amount: transaction.amount,
-    paid_at: transaction.paid_at,
+
+    amount:
+      transaction.amount,
+
+    paid_at:
+      transaction.paid_at,
+
     payment_type:
       payment.payment_type,
   };

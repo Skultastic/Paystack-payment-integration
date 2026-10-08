@@ -2,6 +2,16 @@ import pool from "../config/database";
 import paystack from "../config/paystack";
 
 // =========================================================
+// CONSTANTS
+// =========================================================
+
+const TRIAL_DAYS = 3;
+
+// Small temporary charge used to tokenize/verify the card.
+// Paystack recommends a small charge for this workaround.
+const CARD_VERIFICATION_AMOUNT = 100; // R1.00 in cents
+
+// =========================================================
 // START TRIAL
 // =========================================================
 
@@ -10,7 +20,7 @@ export const startTrial = async (
   planId: number
 ) => {
   // -------------------------------------------------------
-  // 1. Find selected plan
+  // 1. Find selected subscription plan
   // -------------------------------------------------------
 
   const planResult = await pool.query(
@@ -19,6 +29,7 @@ export const startTrial = async (
       id,
       name,
       price_zar,
+      billing_interval,
       paystack_plan_code
     FROM subscription_plans
     WHERE id = $1
@@ -65,7 +76,7 @@ export const startTrial = async (
   const user = userResult.rows[0];
 
   // -------------------------------------------------------
-  // 3. Check whether trial was already used
+  // 3. Check whether user already has a trial
   // -------------------------------------------------------
 
   const existingTrial = await pool.query(
@@ -86,56 +97,109 @@ export const startTrial = async (
   }
 
   // -------------------------------------------------------
-  // 4. Generate unique reference
+  // 4. Prevent multiple active subscriptions/trials
+  // -------------------------------------------------------
+
+  const existingSubscription = await pool.query(
+    `
+    SELECT id
+    FROM subscriptions
+    WHERE user_id = $1
+      AND status IN (
+        'pending',
+        'trialing',
+        'active',
+        'non-renewing'
+      )
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  if ((existingSubscription.rowCount ?? 0) > 0) {
+    throw new Error(
+      "User already has an active subscription or trial"
+    );
+  }
+
+  // -------------------------------------------------------
+  // 5. Generate unique verification reference
   // -------------------------------------------------------
 
   const reference =
-    `TRIAL-${userId}-${Date.now()}`;
+    `TRIAL-CARD-${userId}-${Date.now()}`;
 
   // -------------------------------------------------------
-  // 5. Initialize Paystack card authorization
-  //
-  // This verifies/tokenizes the card.
-  // It does NOT start the monthly subscription.
-  // -------------------------------------------------------
-
-  const response = await paystack.post(
-    "/customer/authorization/initialize",
-    {
-      customer: {
-        email: user.email,
-        first_name: user.name,
-      },
-
-      currency: "ZAR",
-
-      channel: "card",
-
-      purpose: "ADD_CARD",
-
-      recurring_consent: true,
-
-      return_url:
-        process.env.PAYSTACK_TRIAL_RETURN_URL,
-    }
-  );
-
-  const authorizationData =
-    response.data.data;
-
-  // -------------------------------------------------------
-  // 6. Create local trial
+  // 6. Calculate trial dates
   // -------------------------------------------------------
 
   const trialStart = new Date();
 
   const trialEnd = new Date(
-    trialStart
+    trialStart.getTime()
   );
 
   trialEnd.setDate(
-    trialEnd.getDate() + 3
+    trialEnd.getDate() + TRIAL_DAYS
   );
+
+  // -------------------------------------------------------
+  // 7. Initialize small verification transaction
+  //
+  // IMPORTANT:
+  // We DO NOT pass the subscription plan here.
+  //
+  // Passing the plan would create the subscription
+  // immediately after the R1 payment.
+  //
+  // Instead:
+  //
+  // R1 card verification
+  //       ↓
+  // charge.success webhook
+  //       ↓
+  // save authorization
+  //       ↓
+  // create subscription with start_date = trialEnd
+  // -------------------------------------------------------
+
+  const response = await paystack.post(
+    "/transaction/initialize",
+    {
+      email: user.email,
+
+      amount: CARD_VERIFICATION_AMOUNT,
+
+      currency: "ZAR",
+
+      reference,
+
+      channels: ["card"],
+
+      callback_url:
+        process.env.PAYSTACK_TRIAL_RETURN_URL,
+
+      metadata: {
+        user_id: userId,
+        plan_id: plan.id,
+        purpose: "trial_card_verification",
+        trial_days: TRIAL_DAYS,
+      },
+    }
+  );
+
+  const transaction =
+    response.data.data;
+
+  if (!transaction.authorization_url) {
+    throw new Error(
+      "Paystack did not return an authorization URL"
+    );
+  }
+
+  // -------------------------------------------------------
+  // 8. Create local trial
+  // -------------------------------------------------------
 
   const subscriptionResult =
     await pool.query(
@@ -168,7 +232,43 @@ export const startTrial = async (
     subscriptionResult.rows[0].id;
 
   // -------------------------------------------------------
-  // 7. Return authorization information
+  // 9. Save the verification transaction
+  // -------------------------------------------------------
+
+  await pool.query(
+    `
+    INSERT INTO payments (
+      user_id,
+      subscription_id,
+      paystack_reference,
+      amount_zar,
+      currency,
+      payment_type,
+      status
+    )
+    VALUES (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5,
+      $6,
+      $7
+    )
+    `,
+    [
+      userId,
+      subscriptionId,
+      reference,
+      1.0,
+      "ZAR",
+      "card_verification",
+      "pending",
+    ]
+  );
+
+  // -------------------------------------------------------
+  // 10. Return checkout information
   // -------------------------------------------------------
 
   return {
@@ -178,6 +278,10 @@ export const startTrial = async (
 
     planName: plan.name,
 
+    priceZar: Number(plan.price_zar),
+
+    trialDays: TRIAL_DAYS,
+
     trialStart,
 
     trialEnd,
@@ -185,25 +289,22 @@ export const startTrial = async (
     reference,
 
     authorizationUrl:
-      authorizationData.authorization_url ??
-      authorizationData.url ??
-      null,
+      transaction.authorization_url,
 
     accessCode:
-      authorizationData.access_code ??
-      null,
+      transaction.access_code,
   };
 };
 
 // =========================================================
-// CREATE PAYSTACK SUBSCRIPTION AFTER TRIAL
+// CREATE PAYSTACK SUBSCRIPTION AFTER CARD VERIFICATION
 // =========================================================
 
 export const createPaystackTrialSubscription = async (
   subscriptionId: number
 ) => {
   // -------------------------------------------------------
-  // 1. Get trial
+  // 1. Get local subscription
   // -------------------------------------------------------
 
   const result = await pool.query(
@@ -212,13 +313,20 @@ export const createPaystackTrialSubscription = async (
       s.id,
       s.user_id,
       s.plan_id,
+      s.status,
       s.trial_end_date,
       s.paystack_customer_code,
       s.paystack_authorization_code,
 
+      u.email,
+
+      sp.name AS plan_name,
       sp.paystack_plan_code
 
     FROM subscriptions s
+
+    JOIN users u
+      ON u.id = s.user_id
 
     JOIN subscription_plans sp
       ON sp.id = s.plan_id
@@ -239,7 +347,22 @@ export const createPaystackTrialSubscription = async (
     result.rows[0];
 
   // -------------------------------------------------------
-  // 2. Validate Paystack details
+  // 2. Do not create it twice
+  // -------------------------------------------------------
+
+  if (
+    subscription.paystack_subscription_code
+  ) {
+    return {
+      alreadyCreated: true,
+
+      subscriptionCode:
+        subscription.paystack_subscription_code,
+    };
+  }
+
+  // -------------------------------------------------------
+  // 3. Validate customer
   // -------------------------------------------------------
 
   if (
@@ -250,6 +373,10 @@ export const createPaystackTrialSubscription = async (
     );
   }
 
+  // -------------------------------------------------------
+  // 4. Validate authorization
+  // -------------------------------------------------------
+
   if (
     !subscription.paystack_authorization_code
   ) {
@@ -257,6 +384,10 @@ export const createPaystackTrialSubscription = async (
       "Paystack authorization code is missing"
     );
   }
+
+  // -------------------------------------------------------
+  // 5. Validate plan
+  // -------------------------------------------------------
 
   if (
     !subscription.paystack_plan_code
@@ -267,10 +398,21 @@ export const createPaystackTrialSubscription = async (
   }
 
   // -------------------------------------------------------
-  // 3. Create Paystack subscription
+  // 6. Validate trial date
+  // -------------------------------------------------------
+
+  if (!subscription.trial_end_date) {
+    throw new Error(
+      "Trial end date is missing"
+    );
+  }
+
+  // -------------------------------------------------------
+  // 7. Create Paystack subscription
   //
-  // The customer is subscribed to the existing plan
-  // using the authorization obtained during verification.
+  // Paystack supports start_date when creating a
+  // subscription. This allows the first debit to happen
+  // after the free-trial period.
   // -------------------------------------------------------
 
   const response = await paystack.post(
@@ -284,14 +426,27 @@ export const createPaystackTrialSubscription = async (
 
       authorization:
         subscription.paystack_authorization_code,
+
+      start_date:
+        new Date(
+          subscription.trial_end_date
+        ).toISOString(),
     }
   );
 
   const paystackSubscription =
     response.data.data;
 
+  if (
+    !paystackSubscription.subscription_code
+  ) {
+    throw new Error(
+      "Paystack did not return a subscription code"
+    );
+  }
+
   // -------------------------------------------------------
-  // 4. Save Paystack subscription
+  // 8. Save Paystack subscription
   // -------------------------------------------------------
 
   await pool.query(
@@ -300,13 +455,30 @@ export const createPaystackTrialSubscription = async (
     SET
       paystack_subscription_code = $1,
       paystack_email_token = $2,
-      status = 'active',
+      status = 'trailing',
+      start_date = $3,
+      next_payment_date = $4,
       updated_at = CURRENT_TIMESTAMP
-    WHERE id = $3
+    WHERE id = $5
     `,
     [
       paystackSubscription.subscription_code,
-      paystackSubscription.email_token,
+
+      paystackSubscription.email_token ??
+        null,
+
+      paystackSubscription.start
+        ? new Date(
+            paystackSubscription.start * 1000
+          )
+        : subscription.trial_end_date,
+
+      paystackSubscription.next_payment_date
+        ? new Date(
+            paystackSubscription.next_payment_date
+          )
+        : subscription.trial_end_date,
+
       subscriptionId,
     ]
   );
@@ -315,7 +487,105 @@ export const createPaystackTrialSubscription = async (
 };
 
 // =========================================================
+// REFUND CARD VERIFICATION CHARGE
+// =========================================================
+
+export const refundTrialVerification = async (
+  reference: string
+) => {
+  // -------------------------------------------------------
+  // 1. Find payment
+  // -------------------------------------------------------
+
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      status,
+      payment_type
+    FROM payments
+    WHERE paystack_reference = $1
+    LIMIT 1
+    `,
+    [reference]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error(
+      "Verification payment not found"
+    );
+  }
+
+  const payment =
+    result.rows[0];
+
+  // -------------------------------------------------------
+  // 2. Only refund card verification payments
+  // -------------------------------------------------------
+
+  if (
+    payment.payment_type !==
+    "card_verification"
+  ) {
+    throw new Error(
+      "Payment is not a card verification payment"
+    );
+  }
+
+  // -------------------------------------------------------
+  // 3. Only refund successful payments
+  // -------------------------------------------------------
+
+  if (
+    payment.status !== "successful"
+  ) {
+    return {
+      refunded: false,
+      reason: "Payment was not successful",
+    };
+  }
+
+  // -------------------------------------------------------
+  // 4. Request refund from Paystack
+  // -------------------------------------------------------
+
+  const response = await paystack.post(
+    "/refund",
+    {
+      transaction: reference,
+
+      amount:
+        CARD_VERIFICATION_AMOUNT,
+
+      currency: "ZAR",
+
+      merchant_note:
+        "Refund of trial card verification charge",
+
+      customer_note:
+        "Your temporary card verification charge has been refunded.",
+    }
+  );
+
+  return {
+    refunded: true,
+
+    refund:
+      response.data.data,
+  };
+};
+
+// =========================================================
 // PROCESS EXPIRED TRIALS
+// =========================================================
+//
+// This is a FALLBACK/recovery mechanism.
+//
+// Normally the subscription should already have been
+// created with start_date = trial_end_date.
+//
+// This function exists in case the subscription creation
+// failed or a webhook/process was interrupted.
 // =========================================================
 
 export const expireTrials = async () => {
@@ -329,6 +599,7 @@ export const expireTrials = async () => {
       AND trial_end_date <= CURRENT_TIMESTAMP
       AND paystack_subscription_code IS NULL
       AND paystack_authorization_code IS NOT NULL
+    ORDER BY trial_end_date ASC
     `
   );
 
@@ -348,7 +619,9 @@ export const expireTrials = async () => {
         status: "active",
 
         paystackSubscriptionCode:
-          paystackSubscription.subscription_code,
+          paystackSubscription.subscription_code ??
+          paystackSubscription.subscriptionCode ??
+          null,
       });
     } catch (error) {
       console.error(
@@ -361,6 +634,11 @@ export const expireTrials = async () => {
           subscription.id,
 
         status: "failed",
+
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown error",
       });
     }
   }

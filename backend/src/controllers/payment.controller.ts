@@ -1,6 +1,17 @@
-import { Request, Response, NextFunction } from "express";
 import {
-  initializePayment, verifyPayment} from "../services/payment.service";
+  Request,
+  Response,
+  NextFunction,
+} from "express";
+
+import {
+  initializePayment,
+  verifyPayment,
+} from "../services/payment.service";
+
+// =========================================================
+// INITIALIZE PAYMENT
+// =========================================================
 
 export const initializePaymentController = async (
   req: Request,
@@ -8,32 +19,94 @@ export const initializePaymentController = async (
   next: NextFunction
 ) => {
   try {
-    // Get the payment details sent by the frontend
-    const { email, planId, userId } = req.body;
+    const {
+      email,
+      planId,
+      userId,
+    } = req.body;
 
-    // Make sure all required values were provided
-    if (!email || !planId || !userId) {
+    // -------------------------------------------------------
+    // Validate email
+    // -------------------------------------------------------
+
+    if (
+      !email ||
+      typeof email !== "string"
+    ) {
       return res.status(400).json({
-        message: "email, planId and userId are required",
+        success: false,
+        message:
+          "Valid email is required",
       });
     }
 
-    // Send the details to the payment service
-    // The service handles PostgreSQL and Paystack
-    const payment = await initializePayment(
-      email,
-      Number(planId), // Convert planId from string to number
-      Number(userId)  // Convert userId from string to number
-    );
+    // -------------------------------------------------------
+    // Validate planId
+    // -------------------------------------------------------
 
-    // Return the Paystack checkout information to the frontend
-    res.status(200).json(payment);
+    const parsedPlanId =
+      Number(planId);
 
+    if (
+      !Number.isInteger(
+        parsedPlanId
+      ) ||
+      parsedPlanId <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid planId is required",
+      });
+    }
+
+    // -------------------------------------------------------
+    // Validate userId
+    // -------------------------------------------------------
+
+    const parsedUserId =
+      Number(userId);
+
+    if (
+      !Number.isInteger(
+        parsedUserId
+      ) ||
+      parsedUserId <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid userId is required",
+      });
+    }
+
+    // -------------------------------------------------------
+    // Initialize Paystack payment
+    // -------------------------------------------------------
+
+    const payment =
+      await initializePayment(
+        email.trim(),
+        parsedPlanId,
+        parsedUserId
+      );
+
+    // -------------------------------------------------------
+    // Return Paystack checkout details
+    // -------------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      payment,
+    });
   } catch (error) {
-    // Pass unexpected errors to our error-handling middleware
     next(error);
   }
 };
+
+// =========================================================
+// VERIFY PAYMENT
+// =========================================================
 
 export const verifyPaymentController = async (
   req: Request,
@@ -41,25 +114,42 @@ export const verifyPaymentController = async (
   next: NextFunction
 ) => {
   try {
-    // Get the Paystack transaction reference from the URL
-    const reference = req.params.reference as string;
+    const reference =
+      req.params.reference;
 
-    // Make sure a reference was provided
-    if (!reference) {
+    // -------------------------------------------------------
+    // Validate reference
+    // -------------------------------------------------------
+
+    if (
+      !reference ||
+      typeof reference !== "string"
+    ) {
       return res.status(400).json({
-        message: "Payment reference is required",
+        success: false,
+        message:
+          "Payment reference is required",
       });
     }
 
-    // Send the reference to the payment service
-    // The service communicates with Paystack and updates our database
-    const payment = await verifyPayment(reference);
+    // -------------------------------------------------------
+    // Verify payment with Paystack
+    // -------------------------------------------------------
 
-    // Return the verification result to the frontend
-    res.status(200).json(payment);
+    const payment =
+      await verifyPayment(
+        reference.trim()
+      );
 
+    // -------------------------------------------------------
+    // Return verification result
+    // -------------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      payment,
+    });
   } catch (error) {
-    // Pass unexpected errors to our error-handling middleware
     next(error);
   }
 };

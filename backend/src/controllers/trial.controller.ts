@@ -24,17 +24,58 @@ export const startTrialController = async (
       planId,
     } = req.body;
 
-    if (!userId || !planId) {
+    // -------------------------------------------------------
+    // Convert IDs
+    // -------------------------------------------------------
+
+    const parsedUserId =
+      Number(userId);
+
+    const parsedPlanId =
+      Number(planId);
+
+    // -------------------------------------------------------
+    // Validate user ID
+    // -------------------------------------------------------
+
+    if (
+      !Number.isInteger(
+        parsedUserId
+      ) ||
+      parsedUserId <= 0
+    ) {
       return res.status(400).json({
+        success: false,
         message:
-          "userId and planId are required",
+          "Valid userId is required",
       });
     }
 
+    // -------------------------------------------------------
+    // Validate plan ID
+    // -------------------------------------------------------
+
+    if (
+      !Number.isInteger(
+        parsedPlanId
+      ) ||
+      parsedPlanId <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid planId is required",
+      });
+    }
+
+    // -------------------------------------------------------
+    // Start trial
+    // -------------------------------------------------------
+
     const trial =
       await startTrial(
-        Number(userId),
-        Number(planId)
+        parsedUserId,
+        parsedPlanId
       );
 
     return res.status(201).json({
@@ -50,21 +91,24 @@ export const startTrialController = async (
 // PROCESS EXPIRED TRIALS
 // =========================================================
 
-export const expireTrialsController = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const expired =
-      await expireTrials();
+export const expireTrialsController =
+  async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const expired =
+        await expireTrials();
 
-    return res.status(200).json({
-      success: true,
-      count: expired.length,
-      subscriptions: expired,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+      return res.status(200).json({
+        success: true,
+        count:
+          expired.length,
+        subscriptions:
+          expired,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
