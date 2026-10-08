@@ -152,10 +152,6 @@ export const paystackWebhookController = async (
     // =====================================================
     // 5. IDEMPOTENCY
     // =====================================================
-    //
-    // If Paystack sends the exact event again,
-    // acknowledge it without processing it twice.
-    // =====================================================
 
     if (
       (insertEventResult.rowCount ?? 0) === 0
@@ -325,10 +321,6 @@ export const paystackWebhookController = async (
     // =====================================================
     // 15. UNKNOWN EVENT
     // =====================================================
-    //
-    // We still acknowledge the event so Paystack
-    // doesn't repeatedly send an event we don't use.
-    // =====================================================
 
     await markEventProcessed(
       eventId
@@ -367,24 +359,6 @@ const handleChargeSuccess = async (
     data?.paid_at ??
     null;
 
-  const customerEmail =
-    data?.customer?.email ??
-    null;
-
-  const customerCode =
-    data?.customer?.customer_code ??
-    data?.customer?.code ??
-    null;
-
-  const authorizationCode =
-    data?.authorization
-      ?.authorization_code ??
-    null;
-
-  const planCode =
-    data?.plan?.plan_code ??
-    null;
-
   if (
     !reference ||
     amount === undefined ||
@@ -416,10 +390,6 @@ const handleChargeSuccess = async (
       `,
       [reference]
     );
-
-  // -------------------------------------------------------
-  // Unknown transaction
-  // -------------------------------------------------------
 
   if (
     (paymentResult.rowCount ?? 0) === 0
@@ -553,14 +523,6 @@ const handleTrialCardVerification =
       data?.customer?.code ??
       null;
 
-    const customerEmail =
-      data?.customer?.email ??
-      null;
-
-    // -------------------------------------------------------
-    // Paystack must return reusable authorization
-    // -------------------------------------------------------
-
     if (!authorizationCode) {
       throw new Error(
         "Paystack authorization code is missing"
@@ -618,16 +580,6 @@ const handleTrialCardVerification =
     // =======================================================
     // REFUND R1 VERIFICATION PAYMENT
     // =======================================================
-    //
-    // Paystack's documented free-trial workaround is:
-    //
-    // 1. Tokenize card using a small payment
-    // 2. Obtain customer + authorization
-    // 3. Refund the small payment
-    // 4. Create the subscription
-    //
-    // Paystack documents this workaround for free trials.
-    // =======================================================
 
     try {
       await refundTrialVerification(
@@ -638,27 +590,10 @@ const handleTrialCardVerification =
         "Trial card verification refund failed:",
         refundError
       );
-
-      // Do NOT prevent the subscription from being
-      // created just because the refund request failed.
-      //
-      // The payment remains recorded so it can be
-      // reconciled/refunded separately.
     }
 
     // =======================================================
     // CREATE PAYSTACK SUBSCRIPTION
-    // =======================================================
-    //
-    // The subscription uses:
-    //
-    // customer
-    // plan
-    // authorization
-    // start_date = trial_end_date
-    //
-    // Therefore the first recurring debit happens
-    // after the 3-day trial.
     // =======================================================
 
     await createPaystackTrialSubscription(
@@ -1145,7 +1080,12 @@ const handleSubscriptionCreate =
             EXCLUDED.paystack_email_token,
 
           status =
-            EXCLUDED.status,
+            CASE
+              WHEN subscriptions.status =
+                'trialing'
+              THEN 'trialing'
+              ELSE EXCLUDED.status
+            END,
 
           next_payment_date =
             EXCLUDED.next_payment_date,

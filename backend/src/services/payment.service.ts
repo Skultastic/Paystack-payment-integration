@@ -210,27 +210,18 @@ export const initializePayment = async (
   const paymentEmail =
     user.email;
 
-  // -------------------------------------------------------
-  // Generate unique reference
-  // -------------------------------------------------------
-
-  const reference =
-    `PAY-${userId}-${Date.now()}`;
-
   // =======================================================
   // SUBSCRIPTION PAYMENT
-  // =======================================================
-  //
-  // Standard / Premium
-  //
-  // Paystack's plan code causes the customer to become
-  // subscribed after the transaction succeeds.
   // =======================================================
 
   if (
     plan.name === "Standard" ||
     plan.name === "Premium"
   ) {
+    // -----------------------------------------------------
+    // Make sure Paystack plan exists
+    // -----------------------------------------------------
+
     if (
       !plan.paystack_plan_code
     ) {
@@ -245,6 +236,13 @@ export const initializePayment = async (
           plan.price_zar
         ) * 100
       );
+
+    const reference =
+      `PAY-${userId}-${Date.now()}`;
+
+    // -----------------------------------------------------
+    // Initialize Paystack transaction
+    // -----------------------------------------------------
 
     const response =
       await paystack.post(
@@ -266,11 +264,14 @@ export const initializePayment = async (
           ],
 
           callback_url:
-            process.env.PAYSTACK_PAYMENT_RETURN_URL,
+            process.env
+              .PAYSTACK_PAYMENT_RETURN_URL,
 
           metadata: {
             user_id: userId,
+
             plan_id: plan.id,
+
             payment_type:
               "subscription",
           },
@@ -326,7 +327,9 @@ export const initializePayment = async (
 
       plan: {
         id: plan.id,
+
         name: plan.name,
+
         price_zar:
           Number(
             plan.price_zar
@@ -350,6 +353,13 @@ export const initializePayment = async (
         ) * 100
       );
 
+    const reference =
+      `VIDEO-${userId}-${Date.now()}`;
+
+    // -----------------------------------------------------
+    // Initialize once-off Paystack transaction
+    // -----------------------------------------------------
+
     const response =
       await paystack.post(
         "/transaction/initialize",
@@ -367,11 +377,14 @@ export const initializePayment = async (
           ],
 
           callback_url:
-            process.env.PAYSTACK_PAYMENT_RETURN_URL,
+            process.env
+              .PAYSTACK_PAYMENT_RETURN_URL,
 
           metadata: {
             user_id: userId,
+
             plan_id: plan.id,
+
             payment_type:
               "video_addon",
           },
@@ -427,7 +440,9 @@ export const initializePayment = async (
 
       plan: {
         id: plan.id,
+
         name: plan.name,
+
         price_zar:
           Number(
             plan.price_zar
@@ -452,11 +467,7 @@ export const initializePayment = async (
 export const verifyPayment = async (
   reference: string
 ) => {
-  // -------------------------------------------------------
-  // Find local payment first
-  // -------------------------------------------------------
-
-  const paymentResult =
+  const localPaymentResult =
     await pool.query(
       `
       SELECT
@@ -467,7 +478,8 @@ export const verifyPayment = async (
         amount_zar,
         currency,
         payment_type,
-        status
+        status,
+        paid_at
       FROM payments
       WHERE paystack_reference = $1
       LIMIT 1
@@ -476,19 +488,15 @@ export const verifyPayment = async (
     );
 
   if (
-    (paymentResult.rowCount ?? 0) === 0
+    (localPaymentResult.rowCount ?? 0) === 0
   ) {
     throw new Error(
-      "Payment record not found"
+      "Payment not found"
     );
   }
 
-  const payment =
-    paymentResult.rows[0];
-
-  // -------------------------------------------------------
-  // Verify transaction with Paystack
-  // -------------------------------------------------------
+  const localPayment =
+    localPaymentResult.rows[0];
 
   const response =
     await paystack.get(
@@ -500,62 +508,122 @@ export const verifyPayment = async (
   const transaction =
     response.data.data;
 
-  if (!transaction) {
-    throw new Error(
-      "Paystack transaction data not found"
-    );
-  }
-
-  // =======================================================
-  // VERIFY REFERENCE
-  // =======================================================
-
   if (
     transaction.reference !==
-    payment.paystack_reference
+    localPayment.paystack_reference
   ) {
     throw new Error(
-      "Payment reference does not match"
+      "Payment reference mismatch"
     );
   }
-
-  // =======================================================
-  // VERIFY CURRENCY
-  // =======================================================
 
   if (
     transaction.currency !==
-    payment.currency
+    localPayment.currency
   ) {
     throw new Error(
-      "Payment currency does not match"
+      "Payment currency mismatch"
     );
   }
-
-  // =======================================================
-  // VERIFY AMOUNT
-  // =======================================================
 
   const expectedAmount =
     Math.round(
       Number(
-        payment.amount_zar
+        localPayment.amount_zar
       ) * 100
     );
 
   if (
-    Number(
-      transaction.amount
-    ) !== expectedAmount
+    Number(transaction.amount) !==
+    expectedAmount
   ) {
     throw new Error(
-      "Payment amount does not match"
+      "Payment amount mismatch"
     );
   }
 
-  // =======================================================
-  // PAYMENT NOT SUCCESSFUL
-  // =======================================================
+  // ---------------------------------------------------------
+  // TRIAL CARD VERIFICATION
+  // ---------------------------------------------------------
+
+  if (
+    localPayment.payment_type ===
+    "card_verification"
+  ) {
+    const subscriptionResult =
+      await pool.query(
+        `
+        SELECT
+          id,
+          status,
+          trial_start_date,
+          trial_end_date,
+          paystack_customer_code,
+          paystack_authorization_code,
+          paystack_subscription_code
+        FROM subscriptions
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [
+          localPayment.subscription_id,
+        ]
+      );
+
+    if (
+      (subscriptionResult.rowCount ?? 0) > 0
+    ) {
+      const subscription =
+        subscriptionResult.rows[0];
+
+      /*
+       * The R1 verification transaction may already
+       * be reversal-pending because we refund it after
+       * charge.success.
+       *
+       * The actual trial is successful when Paystack
+       * authorization and subscription details exist.
+       */
+
+      if (
+        subscription.paystack_authorization_code &&
+        subscription.paystack_subscription_code
+      ) {
+        return {
+          reference,
+
+          status: "success",
+
+          transactionStatus:
+            transaction.status,
+
+          paymentType:
+            localPayment.payment_type,
+
+          trial: {
+            subscriptionId:
+              subscription.id,
+
+            status:
+              subscription.status,
+
+            trialStartDate:
+              subscription.trial_start_date,
+
+            trialEndDate:
+              subscription.trial_end_date,
+
+            paystackSubscriptionCode:
+              subscription.paystack_subscription_code,
+          },
+        };
+      }
+    }
+  }
+
+  // ---------------------------------------------------------
+  // NORMAL PAYMENT
+  // ---------------------------------------------------------
 
   if (
     transaction.status !==
@@ -570,56 +638,44 @@ export const verifyPayment = async (
       `,
       [
         transaction.status,
-        payment.id,
+        localPayment.id,
       ]
     );
 
     return {
-      success: false,
+      reference,
 
       status:
         transaction.status,
 
-      reference,
+      transactionStatus:
+        transaction.status,
+
+      paymentType:
+        localPayment.payment_type,
     };
   }
-
-  // =======================================================
-  // PAYMENT SUCCESSFUL
-  // =======================================================
 
   await pool.query(
     `
     UPDATE payments
     SET
       status = 'successful',
-      paid_at = COALESCE(
-        $1,
-        CURRENT_TIMESTAMP
-      )
-    WHERE id = $2
+      paid_at = CURRENT_TIMESTAMP
+    WHERE id = $1
     `,
-    [
-      transaction.paid_at ??
-        null,
-      payment.id,
-    ]
+    [localPayment.id]
   );
 
   return {
-    success: true,
-
-    status: "successful",
-
     reference,
 
-    amount:
-      transaction.amount,
+    status: "success",
 
-    paid_at:
-      transaction.paid_at,
+    transactionStatus:
+      transaction.status,
 
-    payment_type:
-      payment.payment_type,
+    paymentType:
+      localPayment.payment_type,
   };
 };
